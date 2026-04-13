@@ -1366,6 +1366,23 @@ const characters = {
   }
 };
 // ── 状态 ──
+// ── Fisher-Yates shuffle ──
+function shuffle(arr) {
+  for (var i = arr.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+  return arr;
+}
+
+// 每次页面加载时打乱题目顺序，并打乱每道题的选项顺序
+(function shuffleQuiz() {
+  shuffle(questions);
+  questions.forEach(function(q) {
+    shuffle(q.options);
+  });
+})();
+
 var currentQ = 0;
 var answers = new Array(questions.length).fill(null);
 var userName = '';
