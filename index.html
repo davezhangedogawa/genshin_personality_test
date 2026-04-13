@@ -743,6 +743,19 @@
     font-family: 'Noto Serif SC', serif;
     color: #d4c9b0;
   }
+  .generating-text {
+    font-style: italic;
+    color: var(--text-dim);
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+  .dots { display: inline-block; animation: dotPulse 1.4s ease-in-out infinite; }
+  @keyframes dotPulse {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 1; }
+  }
+  .result-user-desc.loaded { animation: fadeIn 0.8s ease; }
+
   .radar-wrap {
     background: linear-gradient(160deg, rgba(26,22,16,0.95), rgba(15,13,10,0.98));
     border: 1px solid var(--border);
@@ -939,7 +952,7 @@
       <div class="result-header">
         <div class="ornament">· · ✦ · ·</div>
         <div class="divider"></div>
-        <div class="result-label">镜鉴所示，你的灵魂最近于</div>
+        <div class="result-label" id="result-label">镜鉴所示，你的灵魂最近于</div>
         <div class="result-name" id="result-name">—</div>
         <div class="result-mbti" id="result-mbti">XXXX</div>
         <div class="divider" style="margin-top:24px"></div>
@@ -955,7 +968,9 @@
         <div class="result-char-desc" id="result-char-desc"></div>
 
         <div class="result-section-title">· 你的灵魂印记 ·</div>
-        <div class="result-user-desc" id="result-user-desc"></div>
+        <div class="result-user-desc" id="result-user-desc">
+          <span class="generating-text">镜鉴正在感知你的灵魂纹路<span class="dots">...</span></span>
+        </div>
       </div>
 
       <!-- 雷达图 -->
@@ -972,20 +987,8 @@
         <div class="dim-bars" id="dim-bars"></div>
       </div>
 
-      <div style="text-align:center; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <div style="text-align:center;">
         <button class="btn-restart" onclick="restartQuiz()">重新映照</button>
-        <button class="btn-save" onclick="saveAsImage()">✦ 保存为图片</button>
-      </div>
-
-      <!-- 意见收集 -->
-      <div class="feedback-box">
-        <div class="suggest-title">· 你有什么想说的？·</div>
-        <p class="suggest-desc">对测试的感受、想法、或者任何建议，都可以留在这里。</p>
-        <textarea id="feedback-input" class="feedback-input" placeholder="写下你的想法…" maxlength="500"></textarea>
-        <div style="text-align:right; margin-top:10px;">
-          <button class="suggest-btn" onclick="submitFeedback()">提交</button>
-        </div>
-        <div class="suggest-feedback" id="feedback-msg"></div>
       </div>
 
       <div class="suggest-box" id="suggest-box">
@@ -997,6 +1000,17 @@
         </div>
         <div class="suggest-feedback" id="suggest-feedback"></div>
         <div class="suggest-log" id="suggest-log"></div>
+      </div>
+
+      <!-- 意见收集 -->
+      <div class="feedback-box">
+        <div class="suggest-title">· 你有什么想说的？·</div>
+        <p class="suggest-desc">对测试的感受、想法、或者任何建议，都可以留在这里。</p>
+        <textarea id="feedback-input" class="feedback-input" placeholder="写下你的想法…" maxlength="500"></textarea>
+        <div style="text-align:right; margin-top:10px;">
+          <button class="suggest-btn" onclick="submitFeedback()">提交</button>
+        </div>
+        <div class="suggest-feedback" id="feedback-msg"></div>
       </div>
 
       <div class="ornament" style="margin-top: 32px;">· · ✦ · ·</div>
@@ -1495,7 +1509,7 @@ function showResult() {
     document.getElementById('screen-result').style.display = 'block';
 
     var data = characters[winner] || {
-      mbti: '——', charDesc: '灵魂深邃，难以归类。', userDesc: '你是独一无二的存在。'
+      mbti: '——', charDesc: '灵魂深邃，难以归类。'
     };
 
     // 名字显示
@@ -1507,7 +1521,6 @@ function showResult() {
     document.getElementById('result-name').textContent = winner;
     document.getElementById('result-mbti').textContent = data.mbti;
     document.getElementById('result-char-desc').textContent = data.charDesc;
-    document.getElementById('result-user-desc').innerHTML = data.userDesc;
     document.getElementById('legend-char-name').textContent = winner;
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -1517,7 +1530,76 @@ function showResult() {
       drawDimBars(userNorm, charNorm, similarity);
       renderSuggestions();
     }, 150);
+
+    // 调用Claude API生成灵魂印记
+    generateSoulDesc(winner, userNorm, similarity);
   }, 2200);
+}
+
+function generateSoulDesc(winner, userNorm, similarity) {
+  var el = document.getElementById('result-user-desc');
+  var charData = characters[winner] || {};
+  var dimNames = ['内倾/外倾', '感性/理性', '真实/表演', '秩序/自由', '连接/独立', '当下/长远'];
+  var dimDesc = userNorm.map(function(v, i) {
+    var label = dimNames[i];
+    var side = v < -0.15 ? dimLabels[i].neg : v > 0.15 ? dimLabels[i].pos : '中性';
+    var strength = Math.abs(v) > 0.6 ? '很强' : Math.abs(v) > 0.3 ? '偏向' : '轻微偏向';
+    return label + '：' + (Math.abs(v) < 0.15 ? '居中' : strength + side);
+  }).join('；');
+
+  // 收集用户答题内容摘要
+  var answerSummary = answers.map(function(ans, qi) {
+    if (ans === null) return null;
+    return questions[qi].options[ans].text;
+  }).filter(Boolean).slice(0, 8).join('、');
+
+  var prompt = [
+    '你是一个性格分析师，语言风格诗意而克制，不说废话，不用"你是一个..."开头。',
+    '',
+    '用户完成了一个基于提瓦特角色的性格测试，结果如下：',
+    '- 最匹配的角色：' + winner + '（' + (charData.mbti || '') + '）',
+    '- 灵魂契合度：' + similarity + '%',
+    '- 六维度分析：' + dimDesc,
+    '- 用户的部分选择：' + answerSummary,
+    '- 角色性格简介：' + (charData.charDesc || ''),
+    '',
+    '请用3-4句话写一段"灵魂印记"，描述这个用户的性格特质。要求：',
+    '1. 基于以上数据，但不要直接列举维度名称',
+    '2. 找到用户和角色之间最有共鸣的那个核心点，深入展开',
+    '3. 语气像一面镜子，说出用户自己也隐约感知到但没说清楚的东西',
+    '4. 中文，句子之间用自然的逻辑过渡，不用列表',
+    '5. 可以在关键词或短语上加<em>标签</em>强调（最多一处）',
+    userName ? '6. 在最后一句自然地提到用户的名字"' + userName + '"' : ''
+  ].filter(Boolean).join('\n');
+
+  fetch('https://soul-mirror-api.davezhangedogawa.workers.dev', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    var text = '';
+    if (data.content && data.content[0] && data.content[0].text) {
+      text = data.content[0].text.trim();
+    }
+    if (text) {
+      el.innerHTML = text;
+      el.classList.add('loaded');
+    } else {
+      el.innerHTML = charData.userDesc || '你是独一无二的存在。';
+      el.classList.add('loaded');
+    }
+  })
+  .catch(function() {
+    // API失败时退回静态描述
+    el.innerHTML = charData.userDesc || '你是独一无二的存在。';
+    el.classList.add('loaded');
+  });
 }
 
 // 维度标签
